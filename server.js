@@ -3,6 +3,11 @@ const bcrypt = require('bcrypt-nodejs');
 const cors = require('cors');
 const knex = require('knex');
 
+const register = require('./controllers/register');
+const signin = require('./controllers/signin');
+const profile = require('./controllers/profile');
+const image = require('./controllers/image');
+
 const db = knex({
   client: 'pg',
   connection: {
@@ -15,95 +20,15 @@ const db = knex({
 
 const app = express();
 
-const database = {
-  users: [
-    {
-      id: '123',
-      name: 'John',
-      password: 'cookies',
-      email: 'john@gmail.com',
-      entries: 0,
-      joined: new Date()
-    },
-    {
-      id: '124',
-      name: 'Sally',
-      password: 'bananas',
-      email: 'sally@gmail.com',
-      entries: 0,
-      joined: new Date()
-    }
-  ]
-}
-
 app.use(express.json());
 app.use(cors());
 
-app.get('/', (req, res)=> {
-  res.send(database.users);
-})
-
-app.post('/signin', (req, res) => {
-  if (req.body.email === database.users[0].email &&
-      req.body.password === database.users[0].password) {
-        res.json(database.users[0]);
-      } else {
-        res.status(400).json('error logging in');
-      }
-})
-
-app.post('/register', (req, res) => {
-  const { email, name, password } = req.body;
-  const hash = bcrypt.hashSync(password);
-    db.transaction(trx => {
-      trx.insert({
-        hash: hash,
-        email: email
-      })
-      .into('login') // it would also work: trx('login').insert({...
-      .returning('email')
-      .then(loginEmail => {
-        return trx('users') // it is a promise based method, it works only if a value is returned
-          .returning('*')
-          .insert({
-            email: loginEmail,
-            name: name,
-            joined: new Date()
-          })
-          .then(user => {
-            res.json(user[0]);
-          })
-      })
-      .then(trx.commit)
-      .catch(trx.rollback)
-    })
-    .catch(err => res.status(400).json('unable to register'))
-})
-
-app.get('/profile/:id', (req, res) => {
-  const { id } = req.params;
-  db.select('*').from('users').where({id}) // with ES6 no need to do {id: id}, because both the property and the value are the same
-    .then(user => {
-      if (user.length) {
-        res.json(user[0])
-      } else {
-        res.status(400).json('Not found')
-      }
-    })
-    .catch(err => res.status(400).json('error getting user'))
-})
-
-app.put('/image', (req, res) => {
-  const { id } = req.body;
-  db('users')
-    .where('id', '=', id) // not === bc this is SQL
-    .increment('entries', 1)
-    .returning('entries')
-    .then(entries => {
-      res.json(entries[0]);
-    })
-    .catch(err => res.status(400).json('unable to get entries'))
-})
+app.get('/', (req, res)=> { res.send(database.users) })
+app.post('/signin', signin.handleSignin(db, bcrypt))
+app.post('/register', (req, res) => { register.handleRegister(req, res, db, bcrypt)})
+app.get('/profile/:id', (req, res) => { profile.handleProfileGet(req, res, db)})
+app.put('/image', (req, res) => { image.handleImage(req, res, db)})
+app.post('/imageurl', (req, res) => { image.handleApiCall(req, res)})
 
 app.listen(3001, ()=> {
   console.log('app is running on port 3001');
